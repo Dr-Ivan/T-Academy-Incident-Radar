@@ -27,7 +27,7 @@ import picocli.CommandLine.TypeConversionException;
         name = "incident-radar",
         description = "Анализ NGINX-логов.",
         mixinStandardHelpOptions = true,
-        version = "incident-radar MR1")
+        version = "incident-radar MR2")
 public final class IncidentRadarCommand implements Callable<Integer> {
 
     private static final Pattern DATE_PATTERN = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
@@ -58,6 +58,12 @@ public final class IncidentRadarCommand implements Callable<Integer> {
 
     @Option(names = "--to", paramLabel = "YYYY-MM-DD", description = "Конечная дата включительно.")
     private @Nullable LocalDate to;
+
+    @Option(names = "--compare-from", paramLabel = "YYYY-MM-DD", description = "Начало периода сравнения включительно.")
+    private @Nullable LocalDate compareFrom;
+
+    @Option(names = "--compare-to", paramLabel = "YYYY-MM-DD", description = "Конец периода сравнения включительно.")
+    private @Nullable LocalDate compareTo;
 
     @Spec
     private @Nullable CommandSpec spec;
@@ -91,11 +97,22 @@ public final class IncidentRadarCommand implements Callable<Integer> {
 
     private AnalysisOptions validatedOptions() {
         try {
-            return new AnalysisOptions(path, outputFormat, outputPath, new DateRange(from, to));
+            return new AnalysisOptions(path, outputFormat, outputPath, new DateRange(from, to), comparisonDateRange());
         } catch (IllegalArgumentException exception) {
             var commandSpec = Objects.requireNonNull(spec, "Команда не инициализирована picocli");
             var message = Objects.requireNonNullElse(exception.getMessage(), "Некорректные параметры запуска");
             throw new ParameterException(commandSpec.commandLine(), message, exception);
+        }
+    }
+
+    private @Nullable DateRange comparisonDateRange() {
+        if (compareFrom == null && compareTo == null) {
+            return null;
+        }
+        try {
+            return new DateRange(compareFrom, compareTo);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("--compare-from должен быть раньше --compare-to", exception);
         }
     }
 
