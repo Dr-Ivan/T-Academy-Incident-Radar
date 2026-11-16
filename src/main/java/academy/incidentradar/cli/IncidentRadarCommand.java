@@ -3,12 +3,15 @@ package academy.incidentradar.cli;
 import academy.incidentradar.model.AnalysisOptions;
 import academy.incidentradar.model.DateRange;
 import academy.incidentradar.report.OutputFormat;
+import academy.incidentradar.report.ReportOutputException;
 import academy.incidentradar.source.LogSourceException;
+import java.io.PrintWriter;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
@@ -27,11 +30,11 @@ import picocli.CommandLine.TypeConversionException;
         name = "incident-radar",
         description = "Анализ NGINX-логов.",
         mixinStandardHelpOptions = true,
-        version = "incident-radar MR2")
+        version = "incident-radar MR3")
 public final class IncidentRadarCommand implements Callable<Integer> {
 
     private static final Pattern DATE_PATTERN = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
-    private final Consumer<AnalysisOptions> action;
+    private final BiConsumer<AnalysisOptions, PrintWriter> action;
 
     @Option(
             names = {"--path", "-p"},
@@ -68,17 +71,23 @@ public final class IncidentRadarCommand implements Callable<Integer> {
     @Spec
     private @Nullable CommandSpec spec;
 
-    private IncidentRadarCommand(Consumer<AnalysisOptions> action) {
+    private IncidentRadarCommand(BiConsumer<AnalysisOptions, PrintWriter> action) {
         this.action = Objects.requireNonNull(action, "action");
     }
 
     /** Создаёт независимый экземпляр CLI для одного запуска. */
     public static CommandLine createCommandLine(Consumer<AnalysisOptions> action) {
+        Objects.requireNonNull(action, "action");
+        return createCommandLineWithOutput((options, ignoredOutput) -> action.accept(options));
+    }
+
+    /** Передаёт обработчику текущий stdout команды. */
+    public static CommandLine createCommandLineWithOutput(BiConsumer<AnalysisOptions, PrintWriter> action) {
         return new CommandLine(new IncidentRadarCommand(action))
                 .setCaseInsensitiveEnumValuesAllowed(true)
                 .registerConverter(LocalDate.class, IncidentRadarCommand::parseDate)
                 .setExecutionExceptionHandler((exception, commandLine, ignored) -> {
-                    if (exception instanceof LogSourceException) {
+                    if (exception instanceof LogSourceException || exception instanceof ReportOutputException) {
                         commandLine.getErr().println("Ошибка: " + exception.getMessage());
                         commandLine.getErr().flush();
                         return ExitCode.USAGE;
@@ -91,17 +100,21 @@ public final class IncidentRadarCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         var options = validatedOptions();
-        action.accept(options);
+        action.accept(options, commandLine().getOut());
         return ExitCode.OK;
+    }
+
+    private CommandLine commandLine() {
+        return Objects.requireNonNull(spec, "Команда не инициализирована picocli")
+                .commandLine();
     }
 
     private AnalysisOptions validatedOptions() {
         try {
             return new AnalysisOptions(path, outputFormat, outputPath, new DateRange(from, to), comparisonDateRange());
         } catch (IllegalArgumentException exception) {
-            var commandSpec = Objects.requireNonNull(spec, "Команда не инициализирована picocli");
             var message = Objects.requireNonNullElse(exception.getMessage(), "Некорректные параметры запуска");
-            throw new ParameterException(commandSpec.commandLine(), message, exception);
+            throw new ParameterException(commandLine(), message, exception);
         }
     }
 

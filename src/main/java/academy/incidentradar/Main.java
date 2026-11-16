@@ -3,7 +3,10 @@ package academy.incidentradar;
 import academy.incidentradar.analysis.LogAnalysisService;
 import academy.incidentradar.cli.IncidentRadarCommand;
 import academy.incidentradar.model.AnalysisOptions;
+import academy.incidentradar.report.ReportData;
+import academy.incidentradar.report.ReportWriter;
 import academy.incidentradar.source.LogSourceResolver;
+import java.io.PrintWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -20,10 +23,10 @@ public final class Main {
     }
 
     public static CommandLine createCommandLine() {
-        return IncidentRadarCommand.createCommandLine(Main::analyze);
+        return IncidentRadarCommand.createCommandLineWithOutput(Main::analyze);
     }
 
-    private static void analyze(AnalysisOptions options) {
+    private static void analyze(AnalysisOptions options, PrintWriter stdout) {
         var sources = new LogSourceResolver().resolve(options.path());
         var result = new LogAnalysisService().analyze(sources, options);
         var readResult = result.readResult();
@@ -50,6 +53,8 @@ public final class Main {
                     relative);
         }
 
-        LOG.info("\n\nСобранная статистика в сыром виде: {}", result.statistics());
+        var data = ReportData.from(options, result);
+        var report = options.outputFormat().createRenderer().render(data);
+        new ReportWriter().write(report, options.outputPath(), stdout);
     }
 }
