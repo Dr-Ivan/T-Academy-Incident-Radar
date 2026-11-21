@@ -19,6 +19,10 @@ public final class LogSourceResolver {
     public List<LogSource> resolve(String value) {
         Objects.requireNonNull(value, "value");
 
+        if (value.isBlank()) {
+            throw new LogSourceException("Источник логов не должен быть пустым");
+        }
+
         var normalized = value.toLowerCase(Locale.ROOT);
         if (normalized.startsWith("http:") || normalized.startsWith("https:")) {
             return resolveHttp(value);
