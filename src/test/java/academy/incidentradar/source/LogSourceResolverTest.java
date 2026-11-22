@@ -124,6 +124,15 @@ class LogSourceResolverTest {
         assertThat(sources).extracting(LogSource::name).containsExactly(literal.toString());
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "  ", "     ", "\t", "\r\n"})
+    @DisplayName("Пустой источник отклоняется с понятным сообщением")
+    void rejectsBlankSource(String value) {
+        assertThatThrownBy(() -> resolver.resolve(value))
+                .isInstanceOf(LogSourceException.class)
+                .hasMessage("Источник логов не должен быть пустым");
+    }
+
     private Path createFile(String relativePath, String content) throws IOException {
         var path = tempDir.resolve(relativePath);
         Files.createDirectories(path.getParent());

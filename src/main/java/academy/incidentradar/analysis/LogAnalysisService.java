@@ -30,21 +30,27 @@ public final class LogAnalysisService {
         var comparisonRange = options.comparisonDateRange();
         var reference = comparisonRange == null ? null : new PeriodAccumulator(comparisonRange);
         var malformedLines = new AtomicLong();
+        Runnable onMalformedLine = () -> {
+            malformedLines.incrementAndGet();
+            LOG.warn("skipped malformed log line");
+        };
 
-        var readResult = reader.read(sources, line -> {
-            var parsed = parser.parse(line);
-            if (parsed.isEmpty()) {
-                malformedLines.incrementAndGet();
-                LOG.warn("skipped malformed log line");
-                return;
-            }
+        var readResult = reader.read(
+                sources,
+                line -> {
+                    var parsed = parser.parse(line);
+                    if (parsed.isEmpty()) {
+                        onMalformedLine.run();
+                        return;
+                    }
 
-            var record = parsed.orElseThrow();
-            primary.accept(record);
-            if (reference != null) {
-                reference.accept(record);
-            }
-        });
+                    var record = parsed.orElseThrow();
+                    primary.accept(record);
+                    if (reference != null) {
+                        reference.accept(record);
+                    }
+                },
+                onMalformedLine);
 
         var statistics = primary.accumulator().snapshot();
         var comparison = reference == null

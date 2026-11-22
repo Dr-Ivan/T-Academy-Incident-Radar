@@ -4,9 +4,24 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 public enum OutputFormat {
-    JSON(".json"),
-    MARKDOWN(".md"),
-    ADOC(".adoc");
+    JSON(".json") {
+        @Override
+        public ReportRenderer createRenderer() {
+            return new JsonReportRenderer();
+        }
+    },
+    MARKDOWN(".md") {
+        @Override
+        public ReportRenderer createRenderer() {
+            return new MarkdownReportRenderer();
+        }
+    },
+    ADOC(".adoc") {
+        @Override
+        public ReportRenderer createRenderer() {
+            return new AsciiDocReportRenderer();
+        }
+    };
 
     private final String extension;
 
@@ -17,6 +32,8 @@ public enum OutputFormat {
     public String extension() {
         return extension;
     }
+
+    public abstract ReportRenderer createRenderer();
 
     public boolean matchesExtension(Path path) {
         var fileName = path.getFileName();

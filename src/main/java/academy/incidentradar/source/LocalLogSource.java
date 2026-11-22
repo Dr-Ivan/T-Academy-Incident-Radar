@@ -1,6 +1,9 @@
 package academy.incidentradar.source;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,7 +29,13 @@ public record LocalLogSource(Path path) implements LogSource {
 
     @Override
     public void forEachLine(Consumer<String> action) {
+        forEachLine(action, () -> {});
+    }
+
+    @Override
+    public void forEachLine(Consumer<String> action, Runnable onDecodingError) {
         Objects.requireNonNull(action, "action");
+        Objects.requireNonNull(onDecodingError, "onDecodingError");
 
         try {
             var attributes = Files.readAttributes(path, BasicFileAttributes.class);
@@ -34,15 +43,30 @@ public record LocalLogSource(Path path) implements LogSource {
                 throw new LogSourceException("Ожидался обычный файл: " + path);
             }
 
-            try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    action.accept(line);
-                }
+            try (var byteLines = Files.newBufferedReader(path, StandardCharsets.ISO_8859_1)) {
+                decodeUtf8Lines(byteLines, action, onDecodingError);
             }
         } catch (IOException exception) {
             throw new LogSourceException(
                     "Не удалось прочитать локальный лог '" + path + "': " + exception.getMessage(), exception);
+        }
+    }
+
+    /** ISO-8859-1 сохраняет байты один к одному до разделения строк. Текст каждой строки декодируется как UTF-8. */
+    private static void decodeUtf8Lines(BufferedReader byteLines, Consumer<String> action, Runnable onDecodingError)
+            throws IOException {
+        var decoder = StandardCharsets.UTF_8.newDecoder();
+        String byteLine;
+        while ((byteLine = byteLines.readLine()) != null) {
+            var bytes = ByteBuffer.wrap(byteLine.getBytes(StandardCharsets.ISO_8859_1));
+            String text;
+            try {
+                text = decoder.decode(bytes).toString();
+            } catch (CharacterCodingException ignored) {
+                onDecodingError.run();
+                continue;
+            }
+            action.accept(text);
         }
     }
 }

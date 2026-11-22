@@ -3,6 +3,7 @@ package academy.incidentradar.source;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import academy.incidentradar.support.CliRunner;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -93,5 +94,28 @@ class LocalLogSourceTest {
                 .isSameAs(failure);
 
         assertThat(receivedLines).containsExactly("first");
+    }
+
+    @Test
+    @DisplayName("Ошибка UTF-8 в user-agent даёт один WARN, анализ продолжается")
+    void analyzesValidRecordsOnBothSidesOfInvalidUtf8() throws IOException {
+        var path = tempDir.resolve("mixed.log");
+        var prefix = "127.0.0.1 - - [01/Mar/2025:12:00:00 +0000] \"GET / HTTP/1.1\" 200 10 \"-\" \"";
+        var valid = prefix + "клиент\"";
+        try (var output = Files.newOutputStream(path)) {
+            output.write((valid + "\n" + prefix).getBytes(StandardCharsets.UTF_8));
+            output.write(0xFF);
+            output.write(("\"\n" + valid).getBytes(StandardCharsets.UTF_8));
+        }
+
+        var result = CliRunner.run("--path", path.toString());
+
+        assertThat(result.exitCode()).as("%s", result).isZero();
+        assertThat(result.stderr()).contains("строк: 3", "Некорректных строк: 1, запросов в основном периоде: 2");
+        assertThat(result.stderr()
+                        .lines()
+                        .filter(line -> line.contains("WARN") && line.contains("skipped malformed log line"))
+                        .count())
+                .isEqualTo(1);
     }
 }

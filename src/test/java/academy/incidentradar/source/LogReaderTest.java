@@ -10,6 +10,7 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,5 +51,26 @@ class LogReaderTest {
                         List.of(new LocalLogSource(firstPath), new LocalLogSource(missingPath)), lines::add))
                 .isInstanceOf(LogSourceException.class)
                 .hasCauseInstanceOf(NoSuchFileException.class);
+    }
+
+    @Test
+    @DisplayName("Ошибка UTF-8 учитывается один раз, соседние строки сохраняются")
+    void countsUndecodablePhysicalLineOnce() throws IOException {
+        var path = tempDir.resolve("mixed.log");
+        var first = "первая \uFFFD";
+        var last = "последняя";
+        try (var output = Files.newOutputStream(path)) {
+            output.write((first + "\r\n").getBytes(StandardCharsets.UTF_8));
+            output.write(new byte[] {(byte) 0xFF, (byte) 0xFE, '\r'});
+            output.write(last.getBytes(StandardCharsets.UTF_8));
+        }
+        var lines = new ArrayList<String>();
+        var decodingErrors = new AtomicInteger();
+
+        var result = reader.read(List.of(new LocalLogSource(path)), lines::add, decodingErrors::incrementAndGet);
+
+        assertThat(result.linesRead()).isEqualTo(3);
+        assertThat(decodingErrors.get()).isEqualTo(1);
+        assertThat(lines).containsExactly(first, last);
     }
 }
