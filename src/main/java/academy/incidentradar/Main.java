@@ -1,8 +1,8 @@
 package academy.incidentradar;
 
+import academy.incidentradar.analysis.LogAnalysisService;
 import academy.incidentradar.cli.IncidentRadarCommand;
 import academy.incidentradar.model.AnalysisOptions;
-import academy.incidentradar.source.LogReader;
 import academy.incidentradar.source.LogSourceResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,17 +20,36 @@ public final class Main {
     }
 
     public static CommandLine createCommandLine() {
-        return IncidentRadarCommand.createCommandLine(Main::readSources);
+        return IncidentRadarCommand.createCommandLine(Main::analyze);
     }
 
-    private static void readSources(AnalysisOptions options) {
+    private static void analyze(AnalysisOptions options) {
         var sources = new LogSourceResolver().resolve(options.path());
-        var result = new LogReader().read(sources, ignored -> {});
+        var result = new LogAnalysisService().analyze(sources, options);
+        var readResult = result.readResult();
 
         LOG.info(
                 "Прочитано источников: {} (\n{}\n), строк: {}",
-                result.files().size(),
-                String.join(",\n", result.files()),
-                result.linesRead());
+                readResult.files().size(),
+                String.join(",\n", readResult.files()),
+                readResult.linesRead());
+        LOG.info(
+                "Некорректных строк: {}, запросов в основном периоде: {}",
+                result.malformedLines(),
+                result.statistics().totalRequestsCount());
+
+        var comparison = result.comparison();
+        if (comparison != null) {
+            var change = comparison.requestsChange();
+            var percentage = change.percentage();
+            var relative = percentage == null ? "н/д" : percentage.toPlainString() + "%";
+            LOG.info(
+                    "Запросов в периоде сравнения: {}, изменение: {} ({})",
+                    comparison.referenceStatistics().totalRequestsCount(),
+                    change.difference().toPlainString(),
+                    relative);
+        }
+
+        LOG.info("\n\nСобранная статистика в сыром виде: {}", result.statistics());
     }
 }

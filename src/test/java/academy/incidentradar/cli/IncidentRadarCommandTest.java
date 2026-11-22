@@ -138,4 +138,80 @@ class IncidentRadarCommandTest {
         assertThat(stderr.toString()).contains("Тестовая ошибка источника").doesNotContain("LogSourceException");
         assertThat(stdout.toString()).isEmpty();
     }
+
+    @Test
+    @DisplayName("Обе пары дат передаются обработчику")
+    void passesComparisonPeriodsToAction() {
+        var exitCode = commandLine.execute(
+                "--path",
+                "access.log",
+                "--from",
+                "2025-03-02",
+                "--to",
+                "2025-03-03",
+                "--compare-from",
+                "2025-03-01",
+                "--compare-to",
+                "2025-03-02");
+
+        assertThat(exitCode).isZero();
+        assertThat(receivedOptions)
+                .containsExactly(new AnalysisOptions(
+                        "access.log",
+                        OutputFormat.MARKDOWN,
+                        null,
+                        new DateRange(LocalDate.of(2025, 3, 2), LocalDate.of(2025, 3, 3)),
+                        new DateRange(LocalDate.of(2025, 3, 1), LocalDate.of(2025, 3, 2))));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"--compare-from", "--compare-to"})
+    @DisplayName("Один аргумент периода сравнения отклоняется")
+    void rejectsSingleComparisonBound(String option) {
+        var exitCode = commandLine.execute(
+                "--path", "access.log", "--from", "2025-03-02", "--to", "2025-03-03", option, "2025-03-01");
+
+        assertThat(exitCode).isEqualTo(2);
+        assertThat(stderr.toString()).contains("--compare-from и --compare-to");
+        assertThat(receivedOptions).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Режим сравнения требует обе границы основного периода")
+    void rejectsComparisonWithOpenPrimaryPeriod() {
+        var exitCode = commandLine.execute(
+                "--path",
+                "access.log",
+                "--from",
+                "2025-03-02",
+                "--compare-from",
+                "2025-03-01",
+                "--compare-to",
+                "2025-03-02");
+
+        assertThat(exitCode).isEqualTo(2);
+        assertThat(stderr.toString()).contains("--from и --to");
+        assertThat(receivedOptions).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"2025-03-01", "2025-02-28"})
+    @DisplayName("Границы периода сравнения должны строго возрастать")
+    void rejectsNonIncreasingComparisonDates(String end) {
+        var exitCode = commandLine.execute(
+                "--path",
+                "access.log",
+                "--from",
+                "2025-03-02",
+                "--to",
+                "2025-03-03",
+                "--compare-from",
+                "2025-03-01",
+                "--compare-to",
+                end);
+
+        assertThat(exitCode).isEqualTo(2);
+        assertThat(stderr.toString()).contains("--compare-from должен быть раньше --compare-to");
+        assertThat(receivedOptions).isEmpty();
+    }
 }
